@@ -22,7 +22,7 @@ setup(
     author_email='phuslu@hotmail.com',
     packages=find_packages(),
     install_requires=[
-        'requests>=2.13.0',
+        'requests~=2.19.0',
         'pyOpenSSL>=0.11',
         'tlslite-ng'
     ],
