@@ -22,6 +22,8 @@ from urllib3.exceptions import (
 )
 import OpenSSL
 
+import requests
+
 log = logging.getLogger(__name__)
 
 
@@ -83,8 +85,8 @@ class HTTPSConnection(BaseHTTPSConnection):
         self._setup_https_tunnel()
 
         self.is_verified = (
-            self.ssl_context.verify_mode == ssl.CERT_REQUIRED or
-            self.assert_fingerprint is not None
+                self.ssl_context.verify_mode == ssl.CERT_REQUIRED or
+                self.assert_fingerprint is not None
         )
 
     def _setup_https_tunnel(self):
@@ -95,14 +97,15 @@ class HTTPSConnection(BaseHTTPSConnection):
 
         try:
             lines = []
-            lines.append(b'CONNECT %s:%d HTTP/1.1' % (host, port))
-            lines.append(b'Host: %s:%d' % (host, port))
+            lines.append('CONNECT %s:%d HTTP/1.1' % (host, port))
+            lines.append('Host: %s:%d' % (host, port))
 
             if self._tunnel_headers:
                 for item in self._tunnel_headers.items():
-                    lines.append(b'%s: %s' % item)
+                    lines.append('%s: %s' % item)
 
-            sock.sendall(b'\r\n'.join(lines) + b'\r\n\r\n')
+            data = '\r\n'.join(lines) + '\r\n\r\n'
+            sock.sendall(data.encode())
 
             data = b''
             code = 0
@@ -139,7 +142,7 @@ class HTTPSConnection(BaseHTTPSConnection):
         except SocketTimeout as e:
             raise ConnectTimeoutError(
                 self, "Connection to %s timed out. (connect timeout=%s)" %
-                (self.host, self.timeout))
+                      (self.host, self.timeout))
 
         except SocketError as e:
             raise NewConnectionError(
@@ -211,18 +214,12 @@ def tlslite_getpeercert(conn):
     return conn._peercert
 
 
-PATCHED = False
+# create a custom http adapter with https secure proxy support
+# can be used for patching and separately
+origin_proxy_manager_for = requests.adapters.HTTPAdapter.proxy_manager_for
 
 
-def patch_requests():
-    global PATCHED
-    if PATCHED:
-        raise RuntimeError('patch multiple time')
-
-    import requests
-
-    origin_proxy_manager_for = requests.adapters.HTTPAdapter.proxy_manager_for
-
+class SecureProxyHTTPAdapter(requests.adapters.HTTPAdapter):
     def proxy_manager_for(self, proxy, **proxy_kwargs):
         if proxy in self.proxy_manager:
             return self.proxy_manager[proxy]
@@ -240,6 +237,25 @@ def patch_requests():
         else:
             return origin_proxy_manager_for(self, proxy, **proxy_kwargs)
 
-    requests.adapters.HTTPAdapter.proxy_manager_for = proxy_manager_for
+
+# create a custom requests.Session, with https secure proxy support
+class SecureProxySession(requests.Session):
+    def __init__(self):
+        super(SecureProxySession, self).__init__()
+
+        self.mount('http://', SecureProxyHTTPAdapter())
+        self.mount('https://', SecureProxyHTTPAdapter())
+
+
+# patching requests
+PATCHED = False
+
+
+def patch_requests():
+    global PATCHED
+    if PATCHED:
+        raise RuntimeError('patch multiple time')
+
+    requests.sessions.HTTPAdapter = SecureProxyHTTPAdapter
 
     PATCHED = True

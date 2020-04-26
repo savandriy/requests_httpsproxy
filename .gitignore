@@ -2,3 +2,4 @@
 env/
 requests_httpsproxy.egg-info
 .tox/
+venv/
