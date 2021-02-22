@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='requests_httpsproxy',
-    version='1.1.0',
+    version='1.2.0',
     description='allow http/https requests through https proxy',
     long_description=open('README.rst').read(),
     classifiers=[

@@ -20,6 +20,9 @@ from urllib3.exceptions import (
     ConnectTimeoutError,
     NewConnectionError,
 )
+
+from urllib3.contrib.pyopenssl import get_subj_alt_name
+
 import OpenSSL
 
 import requests
@@ -189,27 +192,12 @@ def tlslite_getpeercert(conn):
         x509_bytes = conn.session.serverCertChain.x509List[0].bytes
         x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_ASN1,
                                                bytes(x509_bytes))
-        subject = x509.get_subject()
-        abbvs = {
-            'CN': 'commonName',
-            'L': 'localityName',
-            'ST': 'stateOrProvinceName',
-            'O': 'organizationName',
-            'OU': 'organizationalUnitName',
-            'C': 'countryName',
-            'STREET': 'streetAddress',
-            'DC': 'domainComponent',
-            'UID': 'userid',
+        # let urllib do the heavy lifting
+        cert = {
+            "subject": ((("commonName", x509.get_subject().CN),),),
+            "subjectAltName": get_subj_alt_name(x509),
         }
-        cert = {}
-        cert['subject'] = [[(abbvs.get(k.decode()) or k.decode(), v.decode())
-                            for k, v in subject.get_components()]]
-        for i in range(x509.get_extension_count()):
-            extension = x509.get_extension(i)
-            if extension.get_short_name() == b'subjectAltName':
-                cert['subjectAltName'] = []
-                for p in extension.get_data().split(b'\x82')[1:]:
-                    cert['subjectAltName'].append(('DNS', p[1:].decode()))
+
         conn._peercert = cert
     return conn._peercert
 
