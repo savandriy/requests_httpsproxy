@@ -153,7 +153,8 @@ class HTTPSConnection(BaseHTTPSConnection):
 
         # patch fileno,
         # let urllib3.util.connection.is_connection_dropped work as expected
-        tls_conn.fileno = partial(self._origin_sock.fileno)
+        # tls_conn.fileno = partial(self._origin_sock.fileno) # here we always got fileno = -1
+        tls_conn.fileno = partial(sock.fileno)
         # patch getpeercert
         tls_conn.getpeercert = partial(tlslite_getpeercert, tls_conn)
         self.sock = tls_conn
