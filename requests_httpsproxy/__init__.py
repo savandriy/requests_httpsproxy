@@ -27,20 +27,26 @@ import OpenSSL
 
 import requests
 
+# silence the insecure InsecureRequestWarning
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+requests.urllib3.disable_warnings(InsecureRequestWarning)
+
 log = logging.getLogger(__name__)
 
 
 class ProxyManager(BaseProxyManager):
     def __init__(self, proxy_url, num_pools=10, headers=None,
-                 proxy_headers=None, **connection_pool_kw):
+                 proxy_headers=None, insecure_requests=False, **connection_pool_kw):
         assert proxy_url.startswith('https'), 'only support https proxy'
 
         super(ProxyManager, self).__init__(
             proxy_url, num_pools, headers, proxy_headers, **connection_pool_kw)
 
+        # disable cert verification
         self.pool_classes_by_scheme = {
             'http': HTTPConnectionPool,
-            'https': HTTPSConnectionPool,
+            'https': InsecureHTTPSConnectionPool if insecure_requests else HTTPSConnectionPool,
         }
 
     def connection_from_host(self, host, port=None, scheme='http', pool_kwargs=None):
@@ -203,12 +209,39 @@ def tlslite_getpeercert(conn):
     return conn._peercert
 
 
+class InsecureHTTPSConnection(HTTPSConnection):
+    def connect(self):
+        conn = self._new_conn()
+        self._origin_sock = conn
+
+        if self.ssl_context is None:
+            self.ssl_context = ssl._create_unverified_context()
+
+        self.sock = self.ssl_context.wrap_socket(
+            conn, server_hostname=self.host)
+
+        self._setup_https_tunnel()
+
+        self.is_verified = (
+                self.ssl_context.verify_mode == ssl.CERT_REQUIRED or
+                self.assert_fingerprint is not None
+        )
+
+
+class InsecureHTTPSConnectionPool(HTTPSConnectionPool):
+    ConnectionCls = InsecureHTTPSConnection
+
+
 # create a custom http adapter with https secure proxy support
 # can be used for patching and separately
 origin_proxy_manager_for = requests.adapters.HTTPAdapter.proxy_manager_for
 
 
 class SecureProxyHTTPAdapter(requests.adapters.HTTPAdapter):
+    def __init__(self, insecure_requests=False, *args, **kwargs):
+        self.insecure_requests = insecure_requests
+        super(SecureProxyHTTPAdapter, self).__init__(*args, **kwargs)
+
     def proxy_manager_for(self, proxy, **proxy_kwargs):
         if proxy in self.proxy_manager:
             return self.proxy_manager[proxy]
@@ -220,6 +253,7 @@ class SecureProxyHTTPAdapter(requests.adapters.HTTPAdapter):
                 num_pools=self._pool_connections,
                 maxsize=self._pool_maxsize,
                 block=self._pool_block,
+                insecure_requests=self.insecure_requests,
                 **proxy_kwargs
             )
             return manager
@@ -229,11 +263,11 @@ class SecureProxyHTTPAdapter(requests.adapters.HTTPAdapter):
 
 # create a custom requests.Session, with https secure proxy support
 class SecureProxySession(requests.Session):
-    def __init__(self):
+    def __init__(self, insecure_requests=False):
         super(SecureProxySession, self).__init__()
 
-        self.mount('http://', SecureProxyHTTPAdapter())
-        self.mount('https://', SecureProxyHTTPAdapter())
+        self.mount('http://', SecureProxyHTTPAdapter(insecure_requests=insecure_requests))
+        self.mount('https://', SecureProxyHTTPAdapter(insecure_requests=insecure_requests))
 
 
 # patching requests

@@ -54,6 +54,17 @@ verifying the SSL certificate:
     s.verify = False
     print (s.get('https://httpbin.org/ip', proxies={'http':https_proxy, 'https':https_proxy}).text)
 
+In case you don't want to verify the secure proxy's SSL certificate (for example, when making requests using proxy IP),
+you can disable the verification by passing :code:`insecure_requests=True`:
+
+.. code:: python
+
+  from requests_httpsproxy import SecureProxySession
+
+  https_proxy = 'https://username:password@host:port'
+
+  with SecureProxySession(insecure_requests=True) as s:
+    print (s.get('https://httpbin.org/ip', proxies={'http':https_proxy, 'https':https_proxy}).text)
 
 Common issues
 -------
